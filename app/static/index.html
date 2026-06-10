@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>山猫M20 遥控面板</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0f172a;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh; overflow: hidden;
+  }
+
+  .container {
+    display: grid;
+    grid-template-columns: 120px 1fr 120px;
+    grid-template-rows: 120px 1fr 120px;
+    gap: 12px;
+    width: min(700px, 95vw);
+    height: min(700px, 95vh);
+  }
+
+  .video-wrapper {
+    grid-column: 2; grid-row: 2;
+    border-radius: 12px; overflow: hidden;
+    background: #1e293b;
+    box-shadow: 0 0 0 2px #334155, 0 8px 32px rgba(0,0,0,.4);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .video-wrapper img {
+    width: 100%; height: 100%; object-fit: cover;
+  }
+  .video-placeholder {
+    color: #64748b; font-size: 14px; text-align: center; padding: 16px;
+  }
+
+  .btn {
+    border: none; border-radius: 14px;
+    font-size: 32px; font-weight: 600;
+    cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+    touch-action: manipulation;
+    transition: transform .08s, box-shadow .08s, background .08s;
+    display: flex; align-items: center; justify-content: center;
+    background: #1e293b;
+    color: #94a3b8;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+  .btn:active, .btn.active {
+    transform: scale(0.93);
+    box-shadow: 0 1px 4px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.05);
+  }
+
+  .btn-up    { grid-column: 2; grid-row: 1; }
+  .btn-down  { grid-column: 2; grid-row: 3; }
+  .btn-left  { grid-column: 1; grid-row: 2; }
+  .btn-right { grid-column: 3; grid-row: 2; }
+
+  .btn-up.active, .btn-down.active { background: #2563eb; color: #fff; }
+  .btn-left.active, .btn-right.active { background: #ea580c; color: #fff; }
+
+  .status {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    font-size: 12px; color: #475569;
+    background: #1e293b; padding: 6px 16px; border-radius: 20px;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <button class="btn btn-up"    id="btn-up">▲</button>
+  <button class="btn btn-left"  id="btn-left">◀</button>
+  <div class="video-wrapper">
+    <img id="video" src="/api/video" alt="机器狗摄像头画面"
+         onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+    <div class="video-placeholder" style="display:none">等待视频流连接...<br><small>请确认机器狗摄像头已启动</small></div>
+  </div>
+  <button class="btn btn-right" id="btn-right">▶</button>
+  <button class="btn btn-down"  id="btn-down">▼</button>
+</div>
+
+<div class="status" id="status">就绪</div>
+
+<script>
+  const API = {
+    forward:   "/api/forward",
+    backward:  "/api/backward",
+    turnLeft:  "/api/turn-left",
+    turnRight: "/api/turn-right",
+  };
+
+  const POLL_INTERVAL = 300;  // 按住时每300ms发一次脉冲
+  const statusEl = document.getElementById("status");
+  let activeBtnId = null;
+  let pollTimer = null;
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
+
+  async function sendCommand(url) {
+    try {
+      const res = await fetch(url, { method: "POST" });
+      const data = await res.json();
+      setStatus(data.action);
+    } catch (e) {
+      setStatus("请求失败");
+    }
+  }
+
+  const buttons = {
+    "btn-up":    API.forward,
+    "btn-down":  API.backward,
+    "btn-left":  API.turnLeft,
+    "btn-right": API.turnRight,
+  };
+
+  function onStart(btnId) {
+    activeBtnId = btnId;
+    document.getElementById(btnId).classList.add("active");
+    const url = buttons[btnId];
+    sendCommand(url);                             // 立刻发一次
+    pollTimer = setInterval(() => sendCommand(url), POLL_INTERVAL);  // 然后每300ms发一次
+  }
+
+  function onStop() {
+    if (activeBtnId) {
+      document.getElementById(activeBtnId).classList.remove("active");
+      activeBtnId = null;
+    }
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    setStatus("就绪");
+  }
+
+  for (const btnId of Object.keys(buttons)) {
+    const el = document.getElementById(btnId);
+    el.addEventListener("mousedown",   (e) => { e.preventDefault(); onStart(btnId); });
+    el.addEventListener("touchstart",  (e) => { e.preventDefault(); onStart(btnId); });
+    el.addEventListener("mouseup",     (e) => { e.preventDefault(); onStop(); });
+    el.addEventListener("mouseleave",  (e) => { e.preventDefault(); onStop(); });
+    el.addEventListener("touchend",    (e) => { e.preventDefault(); onStop(); });
+    el.addEventListener("touchcancel", (e) => { onStop(); });
+  }
+
+  window.addEventListener("mouseup", () => { if (activeBtnId) onStop(); });
+  window.addEventListener("touchend", () => { if (activeBtnId) onStop(); });
+</script>
+</body>
+</html>
