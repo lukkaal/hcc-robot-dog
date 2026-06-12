@@ -122,11 +122,15 @@
   };
 
   function onStart(btnId) {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
     activeBtnId = btnId;
     document.getElementById(btnId).classList.add("active");
     const url = buttons[btnId];
-    sendCommand(url);                             // 立刻发一次
-    pollTimer = setInterval(() => sendCommand(url), POLL_INTERVAL);  // 然后每300ms发一次
+    sendCommand(url);
+    pollTimer = setInterval(() => sendCommand(url), POLL_INTERVAL);
   }
 
   function onStop() {

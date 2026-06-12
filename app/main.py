@@ -1,7 +1,9 @@
 import threading
+import time
 from contextlib import asynccontextmanager
 
 import cv2
+import numpy as np
 from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -18,26 +20,39 @@ _frame_lock = threading.Lock()
 _latest_frame: bytes | None = None
 
 
+def _make_placeholder_frame():
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    cv2.putText(img, "NO SIGNAL", (140, 260), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (100, 100, 255), 3)
+    cv2.putText(img, "RTSP: " + RTSP_URL, (60, 310), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (150, 150, 150), 1)
+    _, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    return jpeg.tobytes()
+
+
 def _video_capture_loop():
     global _latest_frame
-    cap = cv2.VideoCapture(RTSP_URL)
-    if not cap.isOpened():
-        print("[Video] 无法打开RTSP视频流，请检查机器狗摄像头是否在线")
-        return
-
-    print(f"[Video] 视频流已连接: {RTSP_URL}")
-    try:
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                cap.release()
-                cap = cv2.VideoCapture(RTSP_URL)
-                continue
-            _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+    retry_interval = 5.0
+    while True:
+        cap = cv2.VideoCapture(RTSP_URL)
+        if not cap.isOpened():
+            print(f"[Video] 无法打开RTSP视频流，{retry_interval}s后重试...")
+            placeholder = _make_placeholder_frame()
             with _frame_lock:
-                _latest_frame = jpeg.tobytes()
-    finally:
-        cap.release()
+                _latest_frame = placeholder
+            time.sleep(retry_interval)
+            continue
+
+        print(f"[Video] 视频流已连接: {RTSP_URL}")
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    print("[Video] 视频流断开，尝试重连...")
+                    break
+                _, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                with _frame_lock:
+                    _latest_frame = jpeg.tobytes()
+        finally:
+            cap.release()
 
 
 @asynccontextmanager
@@ -82,25 +97,25 @@ app.add_middleware(
 # ==================== 控制 API ====================
 
 @app.post("/api/forward")
-async def api_forward(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
+def api_forward(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
     robot.forward(duration)
     return {"status": "ok", "action": "forward", "speed": robot.default_speed}
 
 
 @app.post("/api/backward")
-async def api_backward(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
+def api_backward(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
     robot.backward(duration)
     return {"status": "ok", "action": "backward", "speed": robot.default_speed}
 
 
 @app.post("/api/turn-left")
-async def api_turn_left(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
+def api_turn_left(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
     robot.turn_left(duration)
     return {"status": "ok", "action": "turn_left", "speed": robot.default_speed}
 
 
 @app.post("/api/turn-right")
-async def api_turn_right(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
+def api_turn_right(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
     robot.turn_right(duration)
     return {"status": "ok", "action": "turn_right", "speed": robot.default_speed}
 
@@ -108,13 +123,19 @@ async def api_turn_right(duration: float = Query(default=None, description="运�
 # ==================== 视频流 API ====================
 
 def _generate_mjpeg():
-    import time
+    last_frame_time = 0
+    frame_interval = 1.0 / 15  # 15fps, 避免洪水淹没浏览器
     while True:
         with _frame_lock:
             frame = _latest_frame
         if frame is None:
             time.sleep(0.05)
             continue
+        now = time.time()
+        if now - last_frame_time < frame_interval:
+            time.sleep(0.01)
+            continue
+        last_frame_time = now
         yield (
             b"--frame\r\n"
             b"Content-Type: image/jpeg\r\n\r\n" + frame + b"\r\n"
