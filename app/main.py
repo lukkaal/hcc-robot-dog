@@ -2,6 +2,9 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import cv2
 import numpy as np
 from fastapi import FastAPI, Query

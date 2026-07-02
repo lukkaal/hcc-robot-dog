@@ -2,6 +2,10 @@ import json
 import os
 import threading
 import time
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import requests
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
