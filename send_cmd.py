@@ -5,7 +5,7 @@ PORT = 1883
 USERNAME = "mechanicalDog"
 PASSWORD = "U6IsxS0Erz+!o-.y1CNZUOv?"
 CLIENT_ID = "sender_test_001"
-TOPIC = "/247/D1V5L10MVFH1/function/get"
+TOPIC = "/256/44010000001320000075/function/get"
 
 import paho.mqtt.client as mqtt
 import json
