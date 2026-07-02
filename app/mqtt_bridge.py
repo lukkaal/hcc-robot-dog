@@ -1,14 +1,17 @@
 import json
+import os
+import threading
+import time
 import requests
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
-MQTT_BROKER = "106.52.191.198"
-MQTT_PORT = 1883
+MQTT_BROKER = os.environ.get("MQTT_BROKER", "106.52.191.198")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 MQTT_CLIENT_ID = "S&D1V5L10MVFH1&247&1"
-MQTT_USER = "mechanicalDog"
-MQTT_PW = "U6IsxS0Erz+!o-.y1CNZUOv?"
-MQTT_SUB_TOPIC = "/247/D1V5L10MVFH1/function/get"
+MQTT_USER = os.environ.get("MQTT_USER", "mechanicalDog")
+MQTT_PW = os.environ.get("MQTT_PW", "U6IsxS0Erz+!o-.y1CNZUOv?")
+MQTT_SUB_TOPIC = os.environ.get("MQTT_SUB_TOPIC", "/247/D1V5L10MVFH1/function/get")
 
 GATEWAY_URL = "http://127.0.0.1:8000"
 
@@ -31,6 +34,7 @@ class MqttBridge:
         self.client.username_pw_set(MQTT_USER, MQTT_PW)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+        self._stop_event = threading.Event()
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
@@ -39,6 +43,10 @@ class MqttBridge:
             print(f"[MQTT Bridge] 已订阅云端指令通道: {MQTT_SUB_TOPIC}")
         else:
             print(f"[MQTT Bridge] 连接失败, rc={rc}")
+
+    def _on_disconnect(self, client, userdata, rc):
+        if rc != 0:
+            print(f"[MQTT Bridge] 连接断开 (rc={rc})，paho 会自动重连")
 
     def _on_message(self, client, userdata, msg):
         try:
@@ -81,11 +89,29 @@ class MqttBridge:
         except Exception as e:
             print(f"[MQTT Bridge] HTTP 调用失败: {e}")
 
+    def _connect_loop(self):
+        """后台线程：不断尝试连接 MQTT Broker，直到成功或收到停止信号"""
+        while not self._stop_event.is_set():
+            try:
+                print(f"[MQTT Bridge] 正在连接 MQTT Broker {MQTT_BROKER}:{MQTT_PORT} ...")
+                self.client.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+                self.client.loop_start()
+                print("[MQTT Bridge] 连接线程退出（已连接）")
+                return
+            except Exception as e:
+                print(f"[MQTT Bridge] 连接失败: {e}，15s 后重试...")
+                self._stop_event.wait(15.0)
+
     def start(self):
-        self.client.connect(MQTT_BROKER, MQTT_PORT)
-        self.client.loop_start()
+        """非阻塞启动：在后台线程中连接 MQTT，不阻塞 FastAPI 启动"""
+        self.client.on_disconnect = self._on_disconnect
+        threading.Thread(target=self._connect_loop, daemon=True, name="mqtt-connect").start()
 
     def stop(self):
-        self.client.loop_stop()
-        self.client.disconnect()
+        self._stop_event.set()
+        try:
+            self.client.loop_stop()
+            self.client.disconnect()
+        except Exception:
+            pass
         print("[MQTT Bridge] 已断开")
