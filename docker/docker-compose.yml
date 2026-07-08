@@ -1,0 +1,37 @@
+version: "3.7"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: dog-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  zlmediakit:
+    image: zlmediakit/zlmediakit:master
+    container_name: dog-zlmediakit
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "8554:8554"
+      - "1935:1935"
+      - "30000-30500:30000-30500/tcp"
+      - "30000-30500:30000-30500/udp"
+    volumes:
+      - ./zlm-config/config.ini:/opt/media/conf/config.ini
+
+  wvp:
+    image: 108360/wvp-pro:latest
+    container_name: dog-wvp
+    restart: unless-stopped
+    ports:
+      - "18080:18080"
+      - "15060:15060/udp"
+    volumes:
+      - ./wvp-config/application.yml:/opt/wvp/config/application.yml
+    environment:
+      - SIP_IP=${SIP_IP:-192.168.0.194}
+    depends_on:
+      - redis
+      - zlmediakit

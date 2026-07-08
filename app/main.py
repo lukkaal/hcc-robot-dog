@@ -1,3 +1,4 @@
+import os
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -14,8 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.robot_client import RobotClient
 from app.mqtt_bridge import MqttBridge
+from app.docker_manager import ensure_containers, add_rtsp_proxy, stream_logs
 
-RTSP_URL = "rtsp://10.21.31.103:8554/video1"
+RTSP_URL = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
 
 robot: RobotClient = None
 bridge: MqttBridge = None
@@ -62,6 +64,12 @@ def _video_capture_loop():
 async def lifespan(app: FastAPI):
     global robot, bridge
 
+    print("[App] 初始化 GB28181 视频推流容器 ...")
+    gb28181_ok = ensure_containers()
+    if gb28181_ok:
+        add_rtsp_proxy()
+        stream_logs()
+
     print("[App] 正在初始化机器人控制器...")
     robot = RobotClient(default_speed=0.10, pulse_duration=0.5)
     print(f"[App] 机器人客户端就绪  |  默认速度: {robot.default_speed}  |  脉冲时长: {robot.pulse_duration}s")
@@ -75,8 +83,10 @@ async def lifespan(app: FastAPI):
 
     print("=" * 50)
     print("  山猫M20 遥控网关已就绪")
-    print("  Web面板: http://localhost:8000")
-    print("  云端指令: MQTT → 本机 :8000")
+    print("  Web面板:    http://localhost:8000")
+    print("  云端指令:    MQTT → 本机 :8000")
+    print(f"  GB28181推流: {'已启用' if gb28181_ok else '未启用（Docker不可用）'}")
+    print(f"  视频主站:    {os.environ.get('GB28181_SIP_SERVER_HOST', '未配置')}")
     print("=" * 50)
 
     yield

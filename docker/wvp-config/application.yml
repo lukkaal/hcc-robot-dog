@@ -1,0 +1,34 @@
+server:
+  port: 18080
+
+spring:
+  redis:
+    host: redis
+    port: 6379
+
+sip:
+  ip: ${SIP_IP:192.168.0.194}
+  port: 15060
+  domain: 4401900000
+  id: 440103004913250000001
+  password: admin123
+
+# 上级平台（视频主站）
+# WVP 启动后可在 Web 后台 http://localhost:18080 添加级联平台，
+# 也可在此预配置以下参数后自动注册：
+#   server-ip: 1.12.248.179
+#   server-port: 12026
+#   server-id: 44019000002000000001
+#   server-domain: 4401900000
+
+media:
+  id: robot-dog-gw-001
+  ip: zlmediakit
+  http-port: 9092
+  secret: my_secret_key_2025
+  rtp-port-range: 30000,30500
+  auto-config: true
+
+user-settings:
+  auto-apply-play: true
+  stream-on-demand: true
