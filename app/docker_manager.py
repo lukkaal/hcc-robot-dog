@@ -62,7 +62,7 @@ def ensure_containers():
     if not _container_exists("dog-redis"):
         print("[Docker] 首次启动，拉取镜像并创建容器（可能需要几分钟）...")
 
-    r = _compose("up", "-d", "--wait")
+    r = _compose("up", "-d")
     if r.returncode != 0:
         print(f"[Docker] 启动失败:\n{r.stderr}")
         return False
