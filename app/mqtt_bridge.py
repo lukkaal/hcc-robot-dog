@@ -34,6 +34,7 @@ class MqttBridge:
 
     def __init__(self, gateway_url: str = GATEWAY_URL):
         self.gateway_url = gateway_url
+        self.connected = False
         self.client = mqtt.Client(CallbackAPIVersion.VERSION1, MQTT_CLIENT_ID)
         self.client.username_pw_set(MQTT_USER, MQTT_PW)
         self.client.on_connect = self._on_connect
@@ -42,13 +43,16 @@ class MqttBridge:
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
+            self.connected = True
             print(f"[MQTT Bridge] 已连接公网 Broker {MQTT_BROKER}")
             client.subscribe(MQTT_SUB_TOPIC)
             print(f"[MQTT Bridge] 已订阅云端指令通道: {MQTT_SUB_TOPIC}")
         else:
+            self.connected = False
             print(f"[MQTT Bridge] 连接失败, rc={rc}")
 
     def _on_disconnect(self, client, userdata, rc):
+        self.connected = False
         if rc != 0:
             print(f"[MQTT Bridge] 连接断开 (rc={rc})，paho 会自动重连")
 

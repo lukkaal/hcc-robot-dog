@@ -16,11 +16,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.robot_client import RobotClient
 from app.mqtt_bridge import MqttBridge
 from app.docker_manager import ensure_containers, add_rtsp_proxy, stream_logs
+from app.gb28181_client import Gb28181Client, _load_config_from_env
 
 RTSP_URL = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
 
 robot: RobotClient = None
 bridge: MqttBridge = None
+gb_client: Gb28181Client = None
 _frame_lock = threading.Lock()
 _latest_frame: bytes | None = None
 
@@ -62,7 +64,7 @@ def _video_capture_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global robot, bridge
+    global robot, bridge, gb_client
 
     print("[App] 初始化 GB28181 视频推流容器 ...")
     gb28181_ok = ensure_containers()
@@ -81,17 +83,23 @@ async def lifespan(app: FastAPI):
     bridge = MqttBridge()
     bridge.start()
 
+    print("[App] 启动 GB28181 SIP 信令客户端 ...")
+    gb_client = Gb28181Client(_load_config_from_env())
+    gb_client.start()
+
     print("=" * 50)
     print("  山猫M20 遥控网关已就绪")
     print("  Web面板:    http://localhost:8000")
     print("  云端指令:    MQTT → 本机 :8000")
     print(f"  GB28181推流: {'已启用' if gb28181_ok else '未启用（Docker不可用）'}")
+    print(f"  SIP注册状态: 启动中...")
     print(f"  视频主站:    {os.environ.get('GB28181_SIP_SERVER_HOST', '未配置')}")
     print("=" * 50)
 
     yield
 
     print("[App] 正在关闭...")
+    gb_client.stop()
     bridge.stop()
     robot.close()
     print("[App] 已安全退出")
@@ -131,6 +139,28 @@ def api_turn_left(duration: float = Query(default=None, description="运动时�
 def api_turn_right(duration: float = Query(default=None, description="运动时长(秒)，默认0.5")):
     robot.turn_right(duration)
     return {"status": "ok", "action": "turn_right", "speed": robot.default_speed}
+
+
+# ==================== 诊断 API ====================
+
+@app.get("/api/status")
+def api_status():
+    """返回网关整体状态，包括 GB28181 SIP 注册状态"""
+    gb_status = gb_client.selfcheck() if gb_client else None
+    return {
+        "robot": "connected" if robot else "disconnected",
+        "mqtt": bridge.connected if bridge else None,
+        "gb28181": {
+            "running": gb_status.running,
+            "registered": gb_status.registered,
+            "push_active": gb_status.push_active,
+            "local_sip": gb_status.local_sip,
+            "server_sip": gb_status.server_sip,
+            "device_id": gb_status.device_id,
+            "push_target": gb_status.push_target,
+            "last_error": gb_status.last_error,
+        } if gb_status else None,
+    }
 
 
 # ==================== 视频流 API ====================
