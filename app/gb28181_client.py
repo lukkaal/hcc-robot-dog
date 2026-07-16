@@ -454,7 +454,7 @@ class Gb28181Client:
         sa = f"{self.cfg.server_ip}:{self.cfg.server_port}"
 
         lines = [
-            f"REGISTER sip:{self.cfg.device_id}@{self.cfg.server_domain} SIP/2.0",
+            f"REGISTER sip:{self.cfg.server_domain} SIP/2.0",
             f"Via: SIP/2.0/UDP {self.cfg.local_sip_ip}:{self.cfg.local_sip_port};rport;branch={_branch()}",
             f"From: <sip:{self.cfg.device_id}@{self.cfg.server_domain}>;tag={self._from_tag}",
             f"To: <sip:{self.cfg.device_id}@{self.cfg.server_domain}>",

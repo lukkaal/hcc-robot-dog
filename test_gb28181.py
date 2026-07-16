@@ -141,62 +141,73 @@ def step3_register_auth():
     realm = SIP_DOMAIN
     registered = False
 
-    # 发送无认证 REGISTER
-    print(f"  → REGISTER (无认证) sip:{DEVICE_ID}@{SIP_DOMAIN}")
-    msg = build_register(cseq, call_id, from_tag, 3600, nonce, realm)
-    sock.sendto(msg.encode(), (SIP_SERVER_HOST, SIP_SERVER_PORT))
+    # 按平台兼容性依次尝试两种 Request-URI 格式
+    for fmt, fmt_label in [("domain", "sip:域"), ("device", "sip:设备ID@域")]:
+        sock.settimeout(5)
+        nonce = None
+        cseq = 1
 
-    try:
-        data, addr = sock.recvfrom(8192)
-        raw = data.decode(errors="replace")
-        first_line = raw.split("\r\n")[0]
-        print(f"  ← {first_line}")
+        print(f"  → REGISTER (无认证) [{fmt_label}]")
+        msg = build_register(cseq, call_id, from_tag, 3600, nonce, realm, uri_fmt=fmt)
+        sock.sendto(msg.encode(), (SIP_SERVER_HOST, SIP_SERVER_PORT))
 
-        if "401" in first_line or "407" in first_line:
-            m = re.search(r'nonce="([^"]+)"', raw)
-            if m:
-                nonce = m.group(1)
-                print(f"  {green('OK')} 收到 401 挑战, nonce={nonce[:16]}...")
-            m = re.search(r'realm="([^"]+)"', raw)
-            if m:
-                realm = m.group(1)
+        try:
+            data, addr = sock.recvfrom(8192)
+            raw = data.decode(errors="replace")
+            first_line = raw.split("\r\n")[0]
+            print(f"  ← {first_line}")
 
-            # 发送带认证 REGISTER
-            cseq += 1
-            print(f"  → REGISTER (带 MD5 Digest) sip:{DEVICE_ID}@{SIP_DOMAIN}")
-            msg = build_register(cseq, call_id, from_tag, 3600, nonce, realm)
-            sock.sendto(msg.encode(), (SIP_SERVER_HOST, SIP_SERVER_PORT))
+            if "401" in first_line or "407" in first_line:
+                m = re.search(r'nonce="([^"]+)"', raw)
+                if m:
+                    nonce = m.group(1)
+                    print(f"  {green('OK')} 收到 401 挑战, nonce={nonce[:16]}...")
+                m = re.search(r'realm="([^"]+)"', raw)
+                if m:
+                    realm = m.group(1)
 
-            data2, _ = sock.recvfrom(8192)
-            raw2 = data2.decode(errors="replace")
-            first_line2 = raw2.split("\r\n")[0]
-            print(f"  ← {first_line2}")
+                cseq += 1
+                print(f"  → REGISTER (带 MD5 Digest) [{fmt_label}]")
+                msg = build_register(cseq, call_id, from_tag, 3600, nonce, realm, uri_fmt=fmt)
+                sock.sendto(msg.encode(), (SIP_SERVER_HOST, SIP_SERVER_PORT))
 
-            if "200" in first_line2:
-                print(f"  {green('SUCCESS')} REGISTER 200 OK — 设备注册成功！")
+                data2, _ = sock.recvfrom(8192)
+                raw2 = data2.decode(errors="replace")
+                first_line2 = raw2.split("\r\n")[0]
+                print(f"  ← {first_line2}")
+
+                if "200" in first_line2:
+                    print(f"  {green('SUCCESS')} [{fmt_label}] REGISTER 200 OK — 设备注册成功！")
+                    registered = True
+                    break
+                else:
+                    print(f"  {red('FAIL')} [{fmt_label}] 带认证 REGISTER 被拒绝")
+                    continue
+
+            elif "200" in first_line:
+                print(f"  {green('OK')} [{fmt_label}] REGISTER 直接 200 OK（无需认证），设备已在线")
                 registered = True
+                break
             else:
-                print(f"  {red('FAIL')} 带认证 REGISTER 被拒绝")
+                print(f"  {red('FAIL')} [{fmt_label}] 未预期的响应: {first_line}")
+                continue
 
-        elif "200" in first_line:
-            print(f"  {green('OK')} REGISTER 直接 200 OK（无需认证），设备已在线")
-            registered = True
-        else:
-            print(f"  {red('FAIL')} 未预期的响应: {first_line}")
+        except socket.timeout:
+            print(f"  {red('TIMEOUT')} [{fmt_label}] 未收到响应")
+            continue
 
-    except socket.timeout:
-        print(f"  {red('TIMEOUT')} 未收到响应")
-        print(f"  排查: 确认 {SIP_SERVER_HOST}:{SIP_SERVER_PORT} 是 SIP 信令端口")
-    finally:
-        # 如果注册成功，发一个 expires=0 的注销
-        if registered:
-            cseq += 1
-            print(f"  → REGISTER (expires=0, 注销)")
-            msg = build_register(cseq, call_id, from_tag, 0, nonce, realm)
-            sock.sendto(msg.encode(), (SIP_SERVER_HOST, SIP_SERVER_PORT))
-            time.sleep(0.3)
-        sock.close()
+    if not registered:
+        print(f"  两种格式均失败。排查: 确认 {SIP_SERVER_HOST}:{SIP_SERVER_PORT} 是 SIP 信令端口")
 
+    # 如果注册成功，发一个 expires=0 的注销
+    if registered:
+        cseq += 1
+        print(f"  → REGISTER (expires=0, 注销)")
+        msg = build_register(cseq, call_id, from_tag, 0, nonce, realm, uri_fmt=fmt)
+        sock.sendto(msg.encode(), (SIP_SERVER_HOST, SIP_SERVER_PORT))
+        time.sleep(0.3)
+
+    sock.close()
     return registered
 
 
@@ -217,9 +228,15 @@ def step4_status_check():
 
 # ========== 辅助: 构建 REGISTER ==========
 
-def build_register(cseq, call_id, from_tag, expires, nonce, realm):
+def build_register(cseq, call_id, from_tag, expires, nonce, realm, uri_fmt="domain"):
+    """uri_fmt: 'device' → sip:DEV_ID@DOMAIN, 'domain' → sip:DOMAIN"""
+    if uri_fmt == "device":
+        request_uri = f"sip:{DEVICE_ID}@{SIP_DOMAIN}"
+    else:
+        request_uri = f"sip:{SIP_DOMAIN}"
+
     lines = [
-        f"REGISTER sip:{DEVICE_ID}@{SIP_DOMAIN} SIP/2.0",
+        f"REGISTER {request_uri} SIP/2.0",
         f"Via: SIP/2.0/UDP {LOCAL_SIP_IP}:{LOCAL_SIP_PORT};rport;branch={branch()}",
         f"From: <sip:{DEVICE_ID}@{SIP_DOMAIN}>;tag={from_tag}",
         f"To: <sip:{DEVICE_ID}@{SIP_DOMAIN}>",
