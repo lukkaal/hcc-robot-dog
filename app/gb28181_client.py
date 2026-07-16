@@ -33,15 +33,15 @@ class Gb28181Config:
     local_sip_ip: str = "192.168.0.194"
     local_sip_port: int = 15060
 
-    server_ip: str = "1.12.248.179"
-    server_port: int = 12026
-    server_id: str = "44019000002000000001"
-    server_domain: str = "4401900000"
+    server_ip: str = "42.193.245.235"
+    server_port: int = 15692
+    server_id: str = "44010082442009000088"
+    server_domain: str = "4401008244"
 
-    device_id: str = "440103004913250000001"
-    auth_id: str = "44010400491325000001"
-    password: str = "admin123"
-    channel_id: str = "44010400491315000003"
+    device_id: str = "440103004913250000002"
+    auth_id: str = "440103004913250000002"
+    password: str = "SntVMP_1a3c"
+    channel_id: str = "440103004913150000002"
 
     expires: int = 3600
     heartbeat_sec: int = 60
