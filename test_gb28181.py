@@ -86,7 +86,7 @@ def step2_options_ping():
     cseq = random.randint(1000, 9999)
 
     msg = "\r\n".join([
-        f"OPTIONS sip:{SIP_SERVER_HOST}:{SIP_SERVER_PORT} SIP/2.0",
+        f"OPTIONS sip:{SIP_SERVER_ID}@{SIP_SERVER_HOST}:{SIP_SERVER_PORT} SIP/2.0",
         f"Via: SIP/2.0/UDP {LOCAL_SIP_IP}:{LOCAL_SIP_PORT};rport;branch={branch()}",
         f"From: <sip:{DEVICE_ID}@{SIP_DOMAIN}>;tag={from_tag}",
         f"To: <sip:{SIP_SERVER_ID}@{SIP_DOMAIN}>",
