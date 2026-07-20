@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.robot_client import RobotClient
 from app.mqtt_bridge import MqttBridge
-from app.docker_manager import ensure_containers, add_rtsp_proxy, stream_logs
+from app.docker_manager import ensure_containers, add_rtsp_proxy, stream_logs, start_ffmpeg_transcode, stop_ffmpeg_transcode
 from app.gb28181_client import Gb28181Client, _load_config_from_env
 
 RTSP_URL = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
@@ -69,8 +69,12 @@ async def lifespan(app: FastAPI):
     print("[App] 初始化 GB28181 视频推流容器 ...")
     gb28181_ok = ensure_containers()
     if gb28181_ok:
-        add_rtsp_proxy()
         stream_logs()
+        if start_ffmpeg_transcode():
+            print("[App] HEVC→H.264 转码已启动，GB28181 推流将使用转码流")
+        else:
+            print("[App] 转码未启用，回退到直接 RTSP 代理")
+            add_rtsp_proxy()
 
     print("[App] 正在初始化机器人控制器...")
     robot = RobotClient(default_speed=0.10, pulse_duration=0.5)
@@ -101,6 +105,7 @@ async def lifespan(app: FastAPI):
     print("[App] 正在关闭...")
     gb_client.stop()
     bridge.stop()
+    stop_ffmpeg_transcode()
     robot.close()
     print("[App] 已安全退出")
 

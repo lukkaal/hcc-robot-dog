@@ -175,8 +175,75 @@ def stream_logs(lines: int = 20):
     print(r.stdout or r.stderr)
 
 
+_ffmpeg_process = None
+
+
+def start_ffmpeg_transcode() -> bool:
+    """启动 FFmpeg HEVC→H.264 转码，推到 ZLM 本地 RTSP 供 GB28181 使用"""
+    global _ffmpeg_process
+
+    rtsp_url = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
+    zlm_push_url = "rtsp://127.0.0.1:8554/live/robot-h264"
+
+    try:
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=5)
+    except Exception:
+        _log("ffmpeg 未安装，无法转码 HEVC→H.264")
+        return False
+
+    cmd = [
+        "ffmpeg",
+        "-rtsp_transport", "tcp",
+        "-i", rtsp_url,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-tune", "zerolatency",
+        "-b:v", "2M",
+        "-an",
+        "-f", "rtsp",
+        zlm_push_url,
+    ]
+
+    _log(f"启动 FFmpeg 转码: {rtsp_url} → {zlm_push_url}")
+    try:
+        _ffmpeg_process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(2)
+        if _ffmpeg_process.poll() is not None:
+            stderr_tail = _ffmpeg_process.stderr.read().decode(errors="replace")[-500:]
+            _log(f"FFmpeg 启动失败:\n{stderr_tail}")
+            return False
+        _log("FFmpeg 转码进程已启动 (PID={})".format(_ffmpeg_process.pid))
+        return True
+    except Exception as e:
+        _log(f"FFmpeg 启动异常: {e}")
+        return False
+
+
+def stop_ffmpeg_transcode():
+    global _ffmpeg_process
+    if _ffmpeg_process is None:
+        return
+    _log("正在停止 FFmpeg 转码进程 ...")
+    try:
+        _ffmpeg_process.terminate()
+        _ffmpeg_process.wait(timeout=5)
+    except Exception:
+        try:
+            _ffmpeg_process.kill()
+        except Exception:
+            pass
+    _ffmpeg_process = None
+    _log("FFmpeg 转码已停止")
+
+
 def stop_containers():
     """停止并删除 ZLMediaKit 容器"""
+    global _ffmpeg_process
+
     if not _is_docker_available():
         return
 
