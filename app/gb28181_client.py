@@ -30,18 +30,18 @@ from typing import Optional
 
 @dataclass
 class Gb28181Config:
-    local_sip_ip: str = "192.168.0.194"
+    local_sip_ip: str = "192.168.0.200"
     local_sip_port: int = 15060
 
-    server_ip: str = "42.193.245.235"
-    server_port: int = 15692
-    server_id: str = "44010082442009000088"
-    server_domain: str = "4401008244"
+    server_ip: str = "14.116.205.39"
+    server_port: int = 5788
+    server_id: str = "44019000002000000001"
+    server_domain: str = "4401900000"
 
-    device_id: str = "440103004913250000002"
-    auth_id: str = "440103004913250000002"
-    password: str = "SntVMP_1a3c"
-    channel_id: str = "440103004913150000002"
+    device_id: str = "44010600491325000010"
+    auth_id: str = "44010600491325000010"
+    password: str = "123456"
+    channel_id: str = "44010600491315000014"
 
     expires: int = 3600
     heartbeat_sec: int = 60
@@ -62,6 +62,9 @@ def _load_config_from_env() -> Gb28181Config:
     sip_ip = os.environ.get("SIP_IP", os.environ.get("GB28181_LOCAL_SIP_IP"))
     if sip_ip:
         cfg.local_sip_ip = sip_ip
+    sip_port = os.environ.get("GB28181_LOCAL_SIP_PORT")
+    if sip_port:
+        cfg.local_sip_port = int(sip_port)
 
     for key, attr, cast in [
         ("GB28181_SIP_SERVER_HOST", "server_ip", str),
@@ -110,12 +113,15 @@ def _md5(s: str) -> str:
 
 
 def _compute_digest(username: str, realm: str, password: str,
-                    method: str, uri: str, nonce: str) -> str:
-    """GB28181 MD5 Digest: HA1=MD5(user:realm:pwd), HA2=MD5(method:uri),
-       response=MD5(HA1:nonce:HA2)"""
+                    method: str, uri: str, nonce: str,
+                    qop: str = None, cnonce: str = None, nc: str = None) -> str:
+    """GB28181 MD5 Digest: 支持 qop=auth"""
     ha1 = _md5(f"{username}:{realm}:{password}")
     ha2 = _md5(f"{method}:{uri}")
-    return _md5(f"{ha1}:{nonce}:{ha2}")
+    if qop == "auth":
+        return _md5(f"{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}")
+    else:
+        return _md5(f"{ha1}:{nonce}:{ha2}")
 
 
 def _branch() -> str:
@@ -257,6 +263,7 @@ class Gb28181Client:
         self._from_tag = _tag()
         self._nonce: Optional[str] = None
         self._realm = self.cfg.server_domain
+        self._qop: Optional[str] = None
         self._registered = False
         self._push_active = False
         self._push_target = ""
@@ -346,6 +353,7 @@ class Gb28181Client:
         while self._running and not self._registered:
             attempt = 0
             self._nonce = None
+            self._qop = None
             self._cseq = 0
             self._call_id = f"{_random_hex(16)}@{self.cfg.local_sip_ip}"
 
@@ -441,7 +449,8 @@ class Gb28181Client:
                 print("[GB28181] ← BYE（停止点播）")
                 self._handle_bye(raw)
             elif method == "MESSAGE":
-                print("[GB28181] ← MESSAGE（忽略）")
+                print("[GB28181] ← MESSAGE（控制指令）")
+                self._handle_message(raw)
             elif method == "ACK":
                 pass  # ACK 不需要处理
             else:
@@ -450,34 +459,46 @@ class Gb28181Client:
     # ====== REGISTER / 401 / 200 ======
 
     def _build_register(self, expires: int, with_auth: bool) -> bytes:
+        import uuid as _uuid
         self._cseq += 1
-        sa = f"{self.cfg.server_ip}:{self.cfg.server_port}"
+        device_domain = self.cfg.device_id[:10]
+        request_uri = f"sip:{self.cfg.server_id}@{self.cfg.server_ip}:{self.cfg.server_port}"
 
         lines = [
-            f"REGISTER sip:{self.cfg.server_domain} SIP/2.0",
-            f"Via: SIP/2.0/UDP {self.cfg.local_sip_ip}:{self.cfg.local_sip_port};rport;branch={_branch()}",
-            f"From: <sip:{self.cfg.device_id}@{self.cfg.server_domain}>;tag={self._from_tag}",
-            f"To: <sip:{self.cfg.device_id}@{self.cfg.server_domain}>",
+            f"REGISTER {request_uri} SIP/2.0",
             f"Call-ID: {self._call_id}",
             f"CSeq: {self._cseq} REGISTER",
-            f"Contact: <sip:{self.cfg.device_id}@{self.cfg.local_sip_ip}:{self.cfg.local_sip_port}>",
+            f"From: <sip:{self.cfg.device_id}@{device_domain}>;tag={self._from_tag}",
+            f"To: <sip:{self.cfg.device_id}@{device_domain}>",
+            f"Via: SIP/2.0/UDP {self.cfg.local_sip_ip}:{self.cfg.local_sip_port};branch={_branch()};rport",
             "Max-Forwards: 70",
-            "User-Agent: RobotDog-M20-GW",
+            f"Contact: <sip:{self.cfg.device_id}@{self.cfg.local_sip_ip}:{self.cfg.local_sip_port}>",
             f"Expires: {expires}",
+            "User-Agent: RobotDog-M20-GW",
         ]
 
         if with_auth and self._nonce:
-            uri = f"sip:{self.cfg.server_domain}"
             auth_user = self.cfg.auth_id or self.cfg.device_id
+            cnonce = str(_uuid.uuid4())
+            nc = "00000001"
             resp = _compute_digest(auth_user, self._realm, self.cfg.password,
-                                   "REGISTER", uri, self._nonce)
-            lines.append(
-                f'Authorization: Digest username="{auth_user}", realm="{self._realm}",'
-                f' nonce="{self._nonce}", uri="{uri}", response="{resp}", algorithm=MD5'
+                                   "REGISTER", request_uri, self._nonce,
+                                   qop=self._qop, cnonce=cnonce, nc=nc)
+            auth = (
+                f'Authorization: Digest username="{auth_user}",'
+                f'realm="{self._realm}",'
+                f'nonce="{self._nonce}",'
+                f'uri="{request_uri}",'
+                f'response="{resp}",'
+                f'algorithm=MD5'
             )
+            if self._qop == "auth":
+                auth += f',qop={self._qop},cnonce="{cnonce}",nc={nc}'
+            lines.append(auth)
 
-        lines.append("Content-Length: 0")
-        return ("\r\n".join(lines) + "\r\n").encode()
+        body = ""
+        lines.append(f"Content-Length: {len(body.encode())}")
+        return ("\r\n".join(lines) + "\r\n\r\n" + body).encode()
 
     def _send_register(self, expires: int = 3600):
         with_auth = self._nonce is not None
@@ -491,6 +512,9 @@ class Gb28181Client:
         m = re.search(r'realm="([^"]+)"', raw)
         if m:
             self._realm = m.group(1)
+        m = re.search(r'qop="([^"]+)"', raw)
+        if m:
+            self._qop = m.group(1)
 
     def _handle_register_ok(self, raw: str):
         if not self._registered:
@@ -534,6 +558,110 @@ class Gb28181Client:
         self._send_sip_response(req, 200)
         print("[GB28181] 推流已停止")
 
+    # ====== MESSAGE: MANSCDP 控制指令处理 ======
+
+    def _parse_manuscdp_xml(self, body: str) -> dict:
+        """从 MANSCDP XML body 中提取 CmdType, SN, DeviceID"""
+        result = {}
+        for field in ["CmdType", "SN", "DeviceID"]:
+            m = re.search(rf"<{field}>(.*?)</{field}>", body, re.IGNORECASE)
+            if m:
+                result[field] = m.group(1).strip()
+        return result
+
+    def _build_catalog_response(self, sn: str) -> bytes:
+        """构建 Catalog 应答 MANSCDP XML"""
+        xml = (
+            '<?xml version="1.0" encoding="gb2312"?>\r\n'
+            '<Response>\r\n'
+            f'<CmdType>Catalog</CmdType>\r\n'
+            f'<SN>{sn}</SN>\r\n'
+            f'<DeviceID>{self.cfg.device_id}</DeviceID>\r\n'
+            '<SumNum>1</SumNum>\r\n'
+            '<DeviceList Num="1">\r\n'
+            '<Item>\r\n'
+            f'<DeviceID>{self.cfg.channel_id}</DeviceID>\r\n'
+            '<Name>RobotDog-M20-Channel</Name>\r\n'
+            '<Manufacturer>ShanMao</Manufacturer>\r\n'
+            '<Model>M20</Model>\r\n'
+            '<Owner>RobotDog</Owner>\r\n'
+            '<CivilCode>440106</CivilCode>\r\n'
+            '<Address>Local</Address>\r\n'
+            '<Parental>0</Parental>\r\n'
+            f'<ParentID>{self.cfg.device_id}</ParentID>\r\n'
+            '<SafetyWay>0</SafetyWay>\r\n'
+            '<RegisterWay>1</RegisterWay>\r\n'
+            '<Secrecy>0</Secrecy>\r\n'
+            '<Status>ON</Status>\r\n'
+            '</Item>\r\n'
+            '</DeviceList>\r\n'
+            '</Response>'
+        )
+        return xml.encode("gb2312")
+
+    def _send_message_request(self, body_bytes: bytes):
+        """发送 MESSAGE 请求到平台（设备 → 平台）"""
+        self._cseq += 1
+        device_domain = self.cfg.device_id[:10]
+        request_uri = f"sip:{self.cfg.server_id}@{self.cfg.server_ip}:{self.cfg.server_port}"
+        call_id = f"{_random_hex(16)}@{self.cfg.local_sip_ip}"
+        branch = _branch()
+        from_tag = _tag()
+
+        lines = [
+            f"MESSAGE {request_uri} SIP/2.0",
+            f"Via: SIP/2.0/UDP {self.cfg.local_sip_ip}:{self.cfg.local_sip_port};rport;branch={branch}",
+            f"From: <sip:{self.cfg.device_id}@{device_domain}>;tag={from_tag}",
+            f"To: <sip:{self.cfg.server_id}@{self.cfg.server_domain}>",
+            f"Call-ID: {call_id}",
+            f"CSeq: {self._cseq} MESSAGE",
+            f"Contact: <sip:{self.cfg.device_id}@{self.cfg.local_sip_ip}:{self.cfg.local_sip_port}>",
+            "Max-Forwards: 70",
+            "User-Agent: RobotDog-M20-GW",
+            "Content-Type: Application/MANSCDP+xml",
+            f"Content-Length: {len(body_bytes)}",
+        ]
+
+        header = "\r\n".join(lines) + "\r\n\r\n"
+        print(f"[GB28181] → MESSAGE ({len(body_bytes)} bytes)")
+        self._send_raw(header.encode() + body_bytes)
+
+    def _handle_message(self, raw: str):
+        """收到的 MESSAGE → 先回 200 OK → 根据 CmdType 处理"""
+        req = _extract_request_info(raw)
+        parts = raw.split("\r\n\r\n", 1)
+        body = parts[1] if len(parts) > 1 else ""
+
+        if not body:
+            print("[GB28181]   MESSAGE 无 body，仅回 200 OK")
+            self._send_sip_response(req, 200)
+            return
+
+        parsed = self._parse_manuscdp_xml(body)
+        cmd = parsed.get("CmdType", "?")
+        sn = parsed.get("SN", "1")
+        print(f"[GB28181]   CmdType={cmd}, SN={sn}")
+
+        # 第一步：回 200 OK 确认收到
+        self._send_sip_response(req, 200)
+
+        # 第二步：按指令类型处理
+        if cmd == "Catalog":
+            resp_bytes = self._build_catalog_response(sn)
+            self._send_message_request(resp_bytes)
+            print(f"[GB28181] ★ Catalog 应答已发送")
+        elif cmd == "DeviceInfo":
+            # 设备信息查询，暂回简单确认
+            pass
+        elif cmd == "DeviceStatus":
+            # 设备状态查询
+            pass
+        elif cmd == "Keepalive":
+            # 心跳
+            pass
+        else:
+            print(f"[GB28181]   未处理的 CmdType: {cmd}")
+
     # ====== SIP 响应（正确回显请求头部） ======
 
     def _send_sip_response(self, req: _SipRequestInfo, code: int, sdp: str = ""):
@@ -557,12 +685,12 @@ class Gb28181Client:
         if sdp:
             lines.append(f"Content-Type: application/sdp")
             lines.append(f"Content-Length: {len(sdp.encode())}")
-            lines.append("")
-            lines.append(sdp.rstrip("\r\n"))
+            body = sdp.rstrip("\r\n") + "\r\n"
         else:
+            body = ""
             lines.append("Content-Length: 0")
 
-        raw = "\r\n".join(lines) + "\r\n"
+        raw = "\r\n".join(lines) + "\r\n\r\n" + body
         print(f"[GB28181] → {code} {reason}")
         self._send_raw(raw.encode())
 
