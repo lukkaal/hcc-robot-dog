@@ -203,7 +203,7 @@ def _build_response_sdp(cfg: Gb28181Config, invite_sdp: SdpInfo) -> str:
 class _SipRequestInfo:
     """从收到的 SIP 请求中提取需要回显的字段"""
     method: str = ""
-    via_branch: str = ""
+    via_full: str = ""        # 完整 Via 头值（不含 "Via: " 前缀）
     from_tag: str = ""
     to_tag: str = ""
     call_id: str = ""
@@ -220,9 +220,10 @@ def _extract_request_info(raw: str) -> _SipRequestInfo:
     if m:
         info.method = m.group(1).upper()
 
-    m = re.search(r'Via:\s*\S+[\s;]+branch=(\S+)', raw, re.IGNORECASE)
+    # 提取完整 Via 头值（Via: 之后的部分），用于原样回显
+    m = re.search(r'^Via:\s*(.+)$', raw, re.IGNORECASE | re.MULTILINE)
     if m:
-        info.via_branch = m.group(1).rstrip(";")
+        info.via_full = m.group(1).strip()
 
     m = re.search(r'From:.*?;tag=(\S+)', raw, re.IGNORECASE)
     if m:
@@ -232,7 +233,6 @@ def _extract_request_info(raw: str) -> _SipRequestInfo:
     if m:
         info.from_uri = m.group(1)
 
-    # To 里可能有或没有 tag
     m = re.search(r'To:.*?;tag=(\S+)', raw, re.IGNORECASE)
     if m:
         info.to_tag = m.group(1).rstrip(">").rstrip(";")
@@ -728,16 +728,15 @@ class Gb28181Client:
     # ====== SIP 响应（正确回显请求头部） ======
 
     def _send_sip_response(self, req: _SipRequestInfo, code: int, sdp: str = ""):
-        """发送 SIP 响应，关键：Via branch / From tag / To tag / Call-ID / CSeq 必须回显"""
+        """发送 SIP 响应，Via/From/To/Call-ID/CSeq 必须原样回显请求头"""
         reason = {200: "OK", 400: "Bad Request", 500: "Server Internal Error",
                   481: "Call/Transaction Does Not Exist"}.get(code, "OK")
 
-        # 本地 tag 用于 To 头（如果请求里没有）
         local_tag = _tag()
 
         lines = [
             f"SIP/2.0 {code} {reason}",
-            f"Via: SIP/2.0/UDP {self.cfg.local_sip_ip}:{self.cfg.local_sip_port};rport;branch={req.via_branch}",
+            f"Via: {req.via_full}" if req.via_full else f"Via: SIP/2.0/UDP {self.cfg.local_sip_ip}:{self.cfg.local_sip_port};rport;branch=z9hG4bK{_random_hex(10)}",
             f"From: <{req.from_uri}>;tag={req.from_tag}",
             f"To: <{req.to_uri}>;tag={req.to_tag or local_tag}",
             f"Call-ID: {req.call_id}",
