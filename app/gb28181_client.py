@@ -51,8 +51,8 @@ class Gb28181Config:
 
     zlm_base: str = "http://127.0.0.1:9092"
     zlm_secret: str = "my_secret_key_2025"
-    zlm_stream_app: str = "live"
-    zlm_stream_name: str = "robot-h264"
+    zlm_stream_app: str = "proxy"
+    zlm_stream_name: str = "robot-dog"
 
     debug: bool = False                   # True 时打印原始 SIP 报文
 
