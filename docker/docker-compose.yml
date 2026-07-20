@@ -29,7 +29,7 @@ services:
     volumes:
       - ./wvp-config/application.yml:/opt/wvp/config/application.yml
     environment:
-      - SIP_IP=${SIP_IP:-192.168.0.194}
+      - SIP_IP=${SIP_IP:-192.168.0.200}
     depends_on:
       - redis
       - zlmediakit

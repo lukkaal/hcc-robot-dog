@@ -486,6 +486,8 @@ class Gb28181Client:
             elif method == "MESSAGE":
                 print("[GB28181] ← MESSAGE（控制指令）")
                 self._handle_message(raw)
+            elif method == "SUBSCRIBE":
+                self._handle_subscribe(raw)
             elif method == "ACK":
                 pass  # ACK 不需要处理
             else:
@@ -703,6 +705,14 @@ class Gb28181Client:
             pass
         else:
             print(f"[GB28181]   未处理的 CmdType: {cmd}")
+
+    # ====== SUBSCRIBE ======
+
+    def _handle_subscribe(self, raw: str):
+        """平台订阅事件（上下线/告警等），回复 200 OK 即可"""
+        req = _extract_request_info(raw)
+        self._send_sip_response(req, 200)
+        print("[GB28181]   SUBSCRIBE → 200 OK")
 
     # ====== SIP 响应（正确回显请求头部） ======
 
