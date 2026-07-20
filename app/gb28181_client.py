@@ -590,18 +590,30 @@ class Gb28181Client:
             print(f"[GB28181]   重复 INVITE，跳过（推流已在进行）")
             return
 
+        # 先回 200 OK，让平台完成 SIP 事务并准备好媒体端口
+        # TCP RTP 模式下平台需要收到 200 OK 后才开始监听媒体端口
+        sdp_body = _build_response_sdp(self.cfg, sdp)
+        self._send_sip_response(req, 200, sdp_body)
+
+        # 再后台启动 RTP 推流（平台需要时间准备媒体端口）
+        self._push_active = True
+        self._push_target = target
+        threading.Thread(target=self._start_rtp_push_delayed,
+                         args=(sdp, target), daemon=True).start()
+
+    def _start_rtp_push_delayed(self, sdp, target):
+        """后台线程：延迟后启动 RTP 推流，给平台媒体端口准备时间"""
+        time.sleep(0.5)
         ok, local_port = self._start_rtp_push(sdp)
         if ok:
-            self._push_active = True
-            self._push_target = target
-            sdp_body = _build_response_sdp(self.cfg, sdp)
-            self._send_sip_response(req, 200, sdp_body)
             print(f"[GB28181] ★ 推流已启动 → {target}")
-            threading.Thread(target=self._delayed_zlm_check, daemon=True).start()
         else:
             self._last_error = "RTP 推流启动失败"
+            self._push_active = False
+            self._push_target = ""
             print(f"[GB28181] ✗ {self._last_error}")
-            self._send_sip_response(req, 500)
+        # 2 秒后检查 ZLM 是否在真正发包
+        threading.Thread(target=self._delayed_zlm_check, daemon=True).start()
 
     # ====== BYE ======
 
