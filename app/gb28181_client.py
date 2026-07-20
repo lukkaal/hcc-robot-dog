@@ -98,6 +98,7 @@ class Gb28181Status:
     device_id: str = ""
     push_target: str = ""          # "ip:port" when pushing
     last_error: str = ""
+    heartbeat_fail_count: int = 0  # 连续心跳失败次数
 
 
 # ============================================================
@@ -268,6 +269,8 @@ class Gb28181Client:
         self._push_active = False
         self._push_target = ""
         self._last_error = ""
+        self._last_register_ok = 0.0           # 最后一次收到 REGISTER 200 OK 的时间
+        self._heartbeat_fail_count = 0         # 连续心跳失败计数
         self._recv_thread: Optional[threading.Thread] = None
         self._heartbeat_thread: Optional[threading.Thread] = None
         self._register_thread: Optional[threading.Thread] = None
@@ -393,11 +396,43 @@ class Gb28181Client:
         self._heartbeat_thread.start()
 
     def _heartbeat_loop(self):
-        while self._running and self._registered:
+        """心跳保活 + 掉线检测 + 自动重注册"""
+        while self._running:
             time.sleep(self.cfg.heartbeat_sec)
-            if self._running and self._registered:
-                print("[GB28181] ♡ 心跳 REGISTER ...")
-                self._send_register(expires=self.cfg.expires)
+            if not self._running:
+                break
+            if not self._registered:
+                continue
+
+            # 发送心跳 REGISTER
+            heartbeat_sent = time.time()
+            print("[GB28181] ♡ 心跳 REGISTER ...")
+            self._send_register(expires=self.cfg.expires)
+
+            # 等待 200 OK（最多 5 秒）
+            time.sleep(5.0)
+
+            if not self._running:
+                break
+
+            # 判断心跳是否成功（recv_loop 收到 200 会更新 _last_register_ok）
+            if self._last_register_ok >= heartbeat_sent:
+                continue  # 成功，继续下一轮
+
+            # 心跳失败
+            self._heartbeat_fail_count += 1
+            print(f"[GB28181] ⚠ 心跳无响应 ({self._heartbeat_fail_count}/3)")
+
+            if self._heartbeat_fail_count >= 3:
+                print("[GB28181] ✗ 连续 3 次心跳失败，标记掉线，开始重注册...")
+                self._last_error = "心跳超时，设备已掉线"
+                self._registered = False
+                self._nonce = None
+                self._qop = None
+                self._register_thread = threading.Thread(
+                    target=self._register_loop, daemon=True
+                )
+                self._register_thread.start()
 
     # ====== UDP 收发 ======
 
@@ -516,7 +551,14 @@ class Gb28181Client:
         if m:
             self._qop = m.group(1)
 
+        # 如果已注册状态下收到 401（平台重启 nonce 过期），立刻用新 nonce 重发
+        if self._registered and self._nonce:
+            print("[GB28181]   平台重启检测（新 nonce），立即重新认证...")
+            self._send_register(expires=self.cfg.expires)
+
     def _handle_register_ok(self, raw: str):
+        self._last_register_ok = time.time()
+        self._heartbeat_fail_count = 0
         if not self._registered:
             self._registered = True
 
@@ -765,6 +807,7 @@ class Gb28181Client:
             device_id=self.cfg.device_id,
             push_target=self._push_target,
             last_error=self._last_error,
+            heartbeat_fail_count=self._heartbeat_fail_count,
         )
 
 

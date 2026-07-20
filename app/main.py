@@ -159,6 +159,7 @@ def api_status():
             "device_id": gb_status.device_id,
             "push_target": gb_status.push_target,
             "last_error": gb_status.last_error,
+            "heartbeat_fail": gb_status.heartbeat_fail_count,
         } if gb_status else None,
     }
 
