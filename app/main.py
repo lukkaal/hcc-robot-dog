@@ -160,6 +160,9 @@ def api_status():
             "push_target": gb_status.push_target,
             "last_error": gb_status.last_error,
             "heartbeat_fail": gb_status.heartbeat_fail_count,
+            "zlm_rtsp_ok": gb_status.zlm_rtsp_ok,
+            "zlm_rtp_active": gb_status.zlm_rtp_active,
+            "zlm_rtp_bytes": gb_status.zlm_rtp_bytes,
         } if gb_status else None,
     }
 

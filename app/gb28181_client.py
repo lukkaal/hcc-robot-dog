@@ -20,6 +20,7 @@ import string
 import threading
 import time
 import urllib.request
+import uuid as _uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -99,6 +100,9 @@ class Gb28181Status:
     push_target: str = ""          # "ip:port" when pushing
     last_error: str = ""
     heartbeat_fail_count: int = 0  # 连续心跳失败次数
+    zlm_rtsp_ok: bool = False      # ZLM RTSP 源流正常
+    zlm_rtp_active: bool = False   # ZLM RTP 正在推流
+    zlm_rtp_bytes: int = 0         # RTP 已发送字节数
 
 
 # ============================================================
@@ -337,7 +341,6 @@ class Gb28181Client:
         test_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         test_sock.settimeout(3)
         try:
-            test_sock.connect((self.cfg.server_ip, self.cfg.server_port))
             test_sock.sendto(b"", (self.cfg.server_ip, self.cfg.server_port))
             print(f"[GB28181] ✓ UDP 可达 {self.cfg.server_ip}:{self.cfg.server_port}")
             return True
@@ -496,7 +499,6 @@ class Gb28181Client:
     # ====== REGISTER / 401 / 200 ======
 
     def _build_register(self, expires: int, with_auth: bool) -> bytes:
-        import uuid as _uuid
         self._cseq += 1
         device_domain = self.cfg.device_id[:10]
         request_uri = f"sip:{self.cfg.server_id}@{self.cfg.server_ip}:{self.cfg.server_port}"
@@ -577,16 +579,25 @@ class Gb28181Client:
             return
 
         sdp = _parse_sdp(body)
-        print(f"[GB28181]   RTP 目标: {sdp.dst_ip}:{sdp.dst_port} "
+        target = f"{sdp.dst_ip}:{sdp.dst_port}"
+        print(f"[GB28181]   RTP 目标: {target} "
               f"({'UDP' if sdp.is_udp else 'TCP'}) SSRC={sdp.ssrc} PT={sdp.pt}")
+
+        # 同一个目标+SSRC的重复 INVITE 直接回 200 OK，不重复启流
+        if self._push_active and self._push_target == target:
+            sdp_body = _build_response_sdp(self.cfg, sdp)
+            self._send_sip_response(req, 200, sdp_body)
+            print(f"[GB28181]   重复 INVITE，跳过（推流已在进行）")
+            return
 
         ok, local_port = self._start_rtp_push(sdp)
         if ok:
             self._push_active = True
-            self._push_target = f"{sdp.dst_ip}:{sdp.dst_port}"
+            self._push_target = target
             sdp_body = _build_response_sdp(self.cfg, sdp)
             self._send_sip_response(req, 200, sdp_body)
-            print(f"[GB28181] ★ 推流已启动 → {sdp.dst_ip}:{sdp.dst_port}")
+            print(f"[GB28181] ★ 推流已启动 → {target}")
+            threading.Thread(target=self._delayed_zlm_check, daemon=True).start()
         else:
             self._last_error = "RTP 推流启动失败"
             print(f"[GB28181] ✗ {self._last_error}")
@@ -785,6 +796,39 @@ class Gb28181Client:
                 time.sleep(1)
         return False, 0
 
+    def _delayed_zlm_check(self):
+        """后台线程：延迟 2 秒后检查 ZLM 推流状态，不阻塞 SIP 收包"""
+        time.sleep(2)
+        zlm = self._check_zlm_stream()
+        print(f"[GB28181]   ZLM 状态: RTSP源={'OK' if zlm['rtsp_ok'] else '异常'} "
+              f"| RTP推流={'OK' if zlm['rtp_active'] else '失败'} "
+              f"| 已发 {zlm['rtp_bytes']} bytes")
+
+    def _check_zlm_stream(self) -> dict:
+        """查询 ZLM RTSP 源流和 RTP 推流状态"""
+        result = {"rtsp_ok": False, "rtp_active": False, "rtp_bytes": 0, "rtsp_bytes": 0}
+        try:
+            for api, label in [
+                (f"{self.cfg.zlm_base}/index/api/getRtpInfo?secret={self.cfg.zlm_secret}", "rtp"),
+                (f"{self.cfg.zlm_base}/index/api/getStatistic?secret={self.cfg.zlm_secret}"
+                 f"&vhost=__defaultVhost__&app={self.cfg.zlm_stream_app}"
+                 f"&stream={self.cfg.zlm_stream_name}", "stat"),
+            ]:
+                req = urllib.request.Request(api)
+                resp = json.loads(urllib.request.urlopen(req, timeout=3).read())
+                if resp.get("code") != 0:
+                    continue
+                if label == "rtp":
+                    for s in resp.get("data", []):
+                        result["rtp_active"] = True
+                        result["rtp_bytes"] += int(s.get("totalBytes", 0))
+                else:
+                    result["rtsp_ok"] = resp.get("data", {}).get("readerCount", 0) > 0
+                    result["rtsp_bytes"] = resp.get("data", {}).get("totalReaderBytes", 0)
+        except Exception:
+            pass
+        return result
+
     def _stop_rtp_push(self):
         body = json.dumps({
             "secret": self.cfg.zlm_secret,
@@ -808,6 +852,7 @@ class Gb28181Client:
 
     def selfcheck(self) -> Gb28181Status:
         """返回当前状态，供 main.py 查询"""
+        zlm = self._check_zlm_stream() if self._push_active else {}
         return Gb28181Status(
             running=self._running,
             registered=self._registered,
@@ -818,6 +863,9 @@ class Gb28181Client:
             push_target=self._push_target,
             last_error=self._last_error,
             heartbeat_fail_count=self._heartbeat_fail_count,
+            zlm_rtsp_ok=zlm.get("rtsp_ok", False),
+            zlm_rtp_active=zlm.get("rtp_active", False),
+            zlm_rtp_bytes=zlm.get("rtp_bytes", 0),
         )
 
 
