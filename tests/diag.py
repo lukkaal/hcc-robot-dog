@@ -10,12 +10,11 @@ import urllib.request
 from dotenv import load_dotenv
 load_dotenv()
 
-RTSP = os.environ.get("ROBOT_RTSP_URL", "")
+RTSP = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
 ZLM_BASE = "http://127.0.0.1:9092"
-ZLM_SECRET = os.environ.get("ZLM_SECRET", "")
-SIP_IP = os.environ.get("GB28181_SIP_SERVER_HOST", "")
-SIP_PORT = int(os.environ.get("GB28181_SIP_SERVER_PORT", "0"))
-TCP_PORTS = [30000, 30006]
+ZLM_SECRET = os.environ.get("ZLM_SECRET", "my_secret_key_2025")
+SIP_IP = os.environ.get("GB28181_SIP_SERVER_HOST", "14.116.205.39")
+SIP_PORT = int(os.environ.get("GB28181_SIP_SERVER_PORT", "5788"))
 ZLM_APP = "proxy"
 ZLM_STREAM = "robot-dog"
 

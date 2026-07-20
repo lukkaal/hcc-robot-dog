@@ -4,7 +4,7 @@ import os
 import sys
 
 # ====== 从 .env 加载参数 ======
-ENV_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+ENV_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
 if os.path.exists(ENV_FILE):
     with open(ENV_FILE) as f:
         for line in f:

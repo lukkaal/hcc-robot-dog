@@ -139,7 +139,10 @@ def add_rtsp_proxy():
     """向 ZLMediaKit 添加机器狗 RTSP 拉流代理"""
     import urllib.request
 
-    rtsp_url = os.environ["ROBOT_RTSP_URL"]
+    rtsp_url = os.environ.get("ROBOT_RTSP_URL", "")
+    if not rtsp_url:
+        _log("错误: ROBOT_RTSP_URL 未在 .env 中配置，无法添加 RTSP 拉流代理")
+        return False
     data = (
         f'{{"secret":"{ZLM_SECRET}","vhost":"__defaultVhost__",'
         '"app":"proxy","stream":"robot-dog",'

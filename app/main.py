@@ -18,7 +18,7 @@ from app.mqtt_bridge import MqttBridge
 from app.docker_manager import ensure_containers, add_rtsp_proxy, stream_logs
 from app.gb28181_client import Gb28181Client, _load_config_from_env
 
-RTSP_URL = os.environ["ROBOT_RTSP_URL"]
+RTSP_URL = os.environ.get("ROBOT_RTSP_URL", "")
 
 robot: RobotClient = None
 bridge: MqttBridge = None
@@ -76,8 +76,12 @@ async def lifespan(app: FastAPI):
     robot = RobotClient(default_speed=0.10, pulse_duration=0.5)
     print(f"[App] 机器人客户端就绪  |  默认速度: {robot.default_speed}  |  脉冲时长: {robot.pulse_duration}s")
 
-    print("[App] 启动视频采集线程...")
-    threading.Thread(target=_video_capture_loop, daemon=True).start()
+    if RTSP_URL:
+        print("[App] 启动视频采集线程...")
+        threading.Thread(target=_video_capture_loop, daemon=True).start()
+    else:
+        print("[App] 警告: ROBOT_RTSP_URL 未配置，视频流不可用")
+        _latest_frame = _make_placeholder_frame()
 
     print("[App] 启动 MQTT 桥接（连接公网云端指令通道）...")
     bridge = MqttBridge()
