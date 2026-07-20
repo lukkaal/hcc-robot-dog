@@ -18,7 +18,7 @@ from app.mqtt_bridge import MqttBridge
 from app.docker_manager import ensure_containers, add_rtsp_proxy, stream_logs
 from app.gb28181_client import Gb28181Client, _load_config_from_env
 
-RTSP_URL = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
+RTSP_URL = os.environ["ROBOT_RTSP_URL"]
 
 robot: RobotClient = None
 bridge: MqttBridge = None

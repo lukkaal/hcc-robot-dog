@@ -1,8 +1,9 @@
+import os
 import socket
 import json
 import time
 
-ROBOT_DEFAULT_IP = "10.21.31.103"
+ROBOT_DEFAULT_IP = os.environ.get("ROBOT_IP", "10.21.31.103")
 ROBOT_DEFAULT_PORT = 30000
 DEFAULT_SPEED = 0.10          # 安全默认低速（最大速度的10%）
 CONTROL_HZ = 20               # 控制频率 20Hz

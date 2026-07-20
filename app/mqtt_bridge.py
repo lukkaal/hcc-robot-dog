@@ -10,12 +10,12 @@ import requests
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
-MQTT_BROKER = os.environ.get("MQTT_BROKER", "106.52.191.198")
+MQTT_BROKER = os.environ.get("MQTT_BROKER", "")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
-MQTT_CLIENT_ID = os.environ.get("MQTT_CLIENT_ID", "S&D1V5L10MVFH1&247&1")
-MQTT_USER = os.environ.get("MQTT_USER", "mechanicalDog")
-MQTT_PW = os.environ.get("MQTT_PW", "U6IsxS0Erz+!o-.y1CNZUOv?")
-MQTT_SUB_TOPIC = os.environ.get("MQTT_SUB_TOPIC", "/256/44010000001320000075/function/get")
+MQTT_CLIENT_ID = os.environ.get("MQTT_CLIENT_ID", "")
+MQTT_USER = os.environ.get("MQTT_USER", "")
+MQTT_PW = os.environ.get("MQTT_PW", "")
+MQTT_SUB_TOPIC = os.environ.get("MQTT_SUB_TOPIC", "")
 
 GATEWAY_URL = "http://127.0.0.1:8000"
 

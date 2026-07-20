@@ -1,16 +1,21 @@
 """发送云端指令到 MQTT，测试机器狗控制链路"""
 
-BROKER = "1.12.248.179"
-PORT = 1883
-USERNAME = "mechanicalDog"
-PASSWORD = "U6IsxS0Erz+!o-.y1CNZUOv?"
-CLIENT_ID = "sender_test_001"
-TOPIC = "/256/44010000001320000075/function/get"
-
-import paho.mqtt.client as mqtt
+import os
 import json
 import time
 import sys
+
+from dotenv import load_dotenv
+load_dotenv()
+
+BROKER = os.environ["MQTT_BROKER"]
+PORT = int(os.environ.get("MQTT_PORT", "1883"))
+USERNAME = os.environ["MQTT_USER"]
+PASSWORD = os.environ["MQTT_PW"]
+CLIENT_ID = "sender_test_001"
+TOPIC = os.environ["MQTT_SUB_TOPIC"]
+
+import paho.mqtt.client as mqtt
 
 ACTIONS = {
     "0": "停止",
@@ -76,7 +81,6 @@ def interactive():
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        # 命令行模式: python send_cmd.py 1 0.5
         action = int(sys.argv[1])
         duration = float(sys.argv[2]) if len(sys.argv) > 2 else 0.5
         send_command(action, duration)

@@ -1,15 +1,17 @@
-"""Quick MQTT connectivity test — paste credentials below and run."""
+"""Quick MQTT connectivity test — reads credentials from .env"""
 
-# ====== 在这里填写你的 MQTT 凭据 ======
-BROKER = "1.12.248.179"
-PORT = 1883
-USERNAME = "mechanicalDog"
-PASSWORD = "U6IsxS0Erz+!o-.y1CNZUOv?"
-CLIENT_ID = "S&44010000001320000075&256&2001585437478027300"
-# =====================================
-
+import os
 import paho.mqtt.client as mqtt
 import time
+
+from dotenv import load_dotenv
+load_dotenv()
+
+BROKER = os.environ["MQTT_BROKER"]
+PORT = int(os.environ.get("MQTT_PORT", "1883"))
+USERNAME = os.environ["MQTT_USER"]
+PASSWORD = os.environ["MQTT_PW"]
+CLIENT_ID = os.environ["MQTT_CLIENT_ID"]
 
 RC_MEANING = {
     0: "成功",

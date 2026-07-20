@@ -4,10 +4,13 @@ MQTT 连接综合测试脚本
 测试网络连通性、MQTT 服务器可达性以及认证信息
 """
 
+import os
 import socket
 import time
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
+from dotenv import load_dotenv
+load_dotenv()
 
 def test_network_connectivity(host, port):
     """测试基础网络连通性"""
@@ -99,12 +102,12 @@ def test_mqtt_authentication(host, port, client_id, username, password, timeout=
         return False
 
 def main():
-    # 配置信息
-    BROKER_HOST = "1.12.248.179"
-    BROKER_PORT = 1883
-    CLIENT_ID = "S844010000001320000075825682001585437478027300"  # 你提供的正确ID
-    USERNAME = "mechanicalDog"
-    PASSWORD = "U6IsxS0Erz+!o-.y1CNZUOv?"
+    # 配置信息（从 .env 读取）
+    BROKER_HOST = os.environ["MQTT_BROKER"]
+    BROKER_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+    CLIENT_ID = os.environ["MQTT_CLIENT_ID"]
+    USERNAME = os.environ["MQTT_USER"]
+    PASSWORD = os.environ["MQTT_PW"]
 
     print("=" * 60)
     print("MQTT 连接综合测试")

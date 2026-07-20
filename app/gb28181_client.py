@@ -41,7 +41,7 @@ class Gb28181Config:
 
     device_id: str = "44010600491325000010"
     auth_id: str = "44010600491325000010"
-    password: str = "123456"
+    password: str = ""
     channel_id: str = "44010600491315000014"
 
     expires: int = 3600
@@ -50,7 +50,7 @@ class Gb28181Config:
     register_timeout_sec: int = 10        # 无认证 REGISTER 发送后等待 401 的超时
 
     zlm_base: str = "http://127.0.0.1:9092"
-    zlm_secret: str = "my_secret_key_2025"
+    zlm_secret: str = ""
     zlm_stream_app: str = "proxy"
     zlm_stream_name: str = "robot-dog"
 
@@ -82,6 +82,11 @@ def _load_config_from_env() -> Gb28181Config:
             setattr(cfg, attr, cast(val))
 
     cfg.debug = os.environ.get("GB28181_DEBUG", "").lower() in ("1", "true", "yes")
+
+    zlm_secret = os.environ.get("ZLM_SECRET")
+    if zlm_secret:
+        cfg.zlm_secret = zlm_secret
+
     return cfg
 
 

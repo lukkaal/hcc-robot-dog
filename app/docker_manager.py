@@ -10,6 +10,7 @@ DOCKER_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docker")
 NETWORK = "dog-net"
 CONTAINER_NAME = "dog-zlmediakit"
 IMAGE = "zlmediakit/zlmediakit:master"
+ZLM_SECRET = os.environ.get("ZLM_SECRET", "")
 
 
 def _log(msg: str):
@@ -118,7 +119,7 @@ def ensure_containers():
     for i in range(30):
         try:
             urllib.request.urlopen(
-                "http://127.0.0.1:9092/index/api/getServerConfig?secret=my_secret_key_2025",
+                f"http://127.0.0.1:9092/index/api/getServerConfig?secret={ZLM_SECRET}",
                 timeout=2,
             )
             _log(f"ZLMediaKit API 就绪")
@@ -138,9 +139,9 @@ def add_rtsp_proxy():
     """向 ZLMediaKit 添加机器狗 RTSP 拉流代理"""
     import urllib.request
 
-    rtsp_url = os.environ.get("ROBOT_RTSP_URL", "rtsp://10.21.31.103:8554/video1")
+    rtsp_url = os.environ["ROBOT_RTSP_URL"]
     data = (
-        '{"secret":"my_secret_key_2025","vhost":"__defaultVhost__",'
+        f'{{"secret":"{ZLM_SECRET}","vhost":"__defaultVhost__",'
         '"app":"proxy","stream":"robot-dog",'
         f'"url":"{rtsp_url}",'
         '"enable_rtsp":1,"enable_rtmp":1,"enable_hls":0,"enable_mp4":0,'
