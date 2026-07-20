@@ -802,6 +802,10 @@ class Gb28181Client:
         print(f"[GB28181]   ZLM 状态: RTSP源={'OK' if zlm['rtsp_ok'] else '异常'} "
               f"| RTP推流={'OK' if zlm['rtp_active'] else '失败'} "
               f"| 已发 {zlm['rtp_bytes']} bytes")
+        if not zlm["rtp_active"] and self._push_active:
+            print("[GB28181]   检测到 RTP 推流已断开，自动清理推流状态")
+            self._push_active = False
+            self._push_target = ""
 
     def _check_zlm_stream(self) -> dict:
         """查询 ZLM RTSP 源流和 RTP 推流状态"""
