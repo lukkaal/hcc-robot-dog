@@ -806,25 +806,28 @@ class Gb28181Client:
 
     def _check_zlm_stream(self) -> dict:
         """查询 ZLM RTSP 源流和 RTP 推流状态"""
-        result = {"rtsp_ok": False, "rtp_active": False, "rtp_bytes": 0, "rtsp_bytes": 0}
+        result = {"rtsp_ok": False, "rtp_active": False, "rtp_bytes": 0}
+        stream_id = f"{self.cfg.zlm_stream_app}/{self.cfg.zlm_stream_name}"
         try:
-            for api, label in [
-                (f"{self.cfg.zlm_base}/index/api/getRtpInfo?secret={self.cfg.zlm_secret}", "rtp"),
-                (f"{self.cfg.zlm_base}/index/api/getStatistic?secret={self.cfg.zlm_secret}"
-                 f"&vhost=__defaultVhost__&app={self.cfg.zlm_stream_app}"
-                 f"&stream={self.cfg.zlm_stream_name}", "stat"),
-            ]:
-                req = urllib.request.Request(api)
-                resp = json.loads(urllib.request.urlopen(req, timeout=3).read())
-                if resp.get("code") != 0:
-                    continue
-                if label == "rtp":
-                    for s in resp.get("data", []):
-                        result["rtp_active"] = True
-                        result["rtp_bytes"] += int(s.get("totalBytes", 0))
-                else:
-                    result["rtsp_ok"] = resp.get("data", {}).get("readerCount", 0) > 0
-                    result["rtsp_bytes"] = resp.get("data", {}).get("totalReaderBytes", 0)
+            # RTSP 源流 — 用 getMediaList 检查流是否存在且有 track
+            api = f"{self.cfg.zlm_base}/index/api/getMediaList?secret={self.cfg.zlm_secret}"
+            req = urllib.request.Request(api)
+            resp = json.loads(urllib.request.urlopen(req, timeout=3).read())
+            if resp.get("code") == 0:
+                for s in resp.get("data", []):
+                    if s.get("stream") == self.cfg.zlm_stream_name:
+                        result["rtsp_ok"] = len(s.get("tracks", [])) > 0
+                        break
+
+            # RTP 推流 — getRtpInfo 需要 stream_id 参数
+            api = (f"{self.cfg.zlm_base}/index/api/getRtpInfo"
+                   f"?secret={self.cfg.zlm_secret}&stream_id={stream_id}")
+            req = urllib.request.Request(api)
+            resp = json.loads(urllib.request.urlopen(req, timeout=3).read())
+            if resp.get("code") == 0:
+                for s in resp.get("data", []):
+                    result["rtp_active"] = True
+                    result["rtp_bytes"] += int(s.get("totalBytes", 0))
         except Exception:
             pass
         return result
