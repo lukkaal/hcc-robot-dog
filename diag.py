@@ -247,6 +247,35 @@ for line in r.stdout.strip().split("\n"):
     elif any(kw in line for kw in ["rtsp://", "GET_PARAMETER", "onConnect"]):
         print(f"  {line[-160:]}")  # 常规 RTSP 心跳，不标色
 
+# ---- 8. 本地服务端口 (8000) ----
+print(bold(f"\n[8] 本地服务端口 8000"))
+r = subprocess.run(
+    ["lsof", "-ti", "tcp:8000"],
+    capture_output=True, text=True, timeout=5,
+)
+pids = [p for p in r.stdout.strip().split("\n") if p]
+if pids:
+    r2 = subprocess.run(["ps", "-p", ",".join(pids), "-o", "pid,comm", "--no-headers"],
+                        capture_output=True, text=True, timeout=5)
+    warn(f"端口 8000 已被占用 ({len(pids)} 个进程):")
+    for line in r2.stdout.strip().split("\n"):
+        if line.strip():
+            info(f"  {line.strip()}")
+    if "--kill" in sys.argv:
+        for pid in pids:
+            try:
+                subprocess.run(["kill", "-9", pid], capture_output=True, timeout=3)
+                ok(f"已终止 PID {pid}")
+            except Exception as e:
+                fail(f"终止 PID {pid} 失败: {e}")
+        print("  现在可以启动 uvicorn 了")
+    else:
+        warn("  加 --kill 参数自动清理后重启: uv run python diag.py --kill")
+else:
+    ok("端口 8000 空闲")
+    if "--kill" in sys.argv:
+        info("无需清理，可直接启动 uvicorn")
+
 # ---- 总结 ----
 print("\n" + "=" * 60)
 print(bold(" 诊断结果汇总"))
